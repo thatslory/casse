@@ -78,6 +78,7 @@ h1 { margin: 0; font: 400 1.6rem/1 var(--display); letter-spacing: .01em; }
 }
 .tap:active { transform: translateY(5px); box-shadow: inset 0 -5px 0 var(--gold-deep); }
 .tap-match { font-weight: 700; font-size: .85rem; letter-spacing: .08em; text-transform: uppercase; }
+.tap-time { font-weight: 700; font-size: 1.05rem; font-variant-numeric: tabular-nums; min-height: 1.5em; }
 .chest { width: 92px; height: auto; }
 .chest .lid { transform-origin: 12px 44px; transition: transform .14s ease-out; }
 .chest.open .lid { transform: rotate(-20deg); }
@@ -128,14 +129,14 @@ h2 {
 .small { padding: 0 12px; }
 .small:hover:not(:disabled), .step:hover:not(:disabled) { border-color: var(--muted); }
 
-.stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin: 0; }
+.stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin: 0; }
 .stats div { display: flex; flex-direction: column-reverse; justify-content: flex-end; gap: 2px; min-width: 0; }
 .stats dt { font-size: .8rem; color: var(--muted); }
 .stats dd { margin: 0; font: 400 1.75rem/1.1 var(--display); font-variant-numeric: tabular-nums; }
 
 .log { display: grid; gap: 10px; }
 .log ol { list-style: none; margin: 0; padding: 0; display: grid; gap: 7px; max-height: 340px; overflow-y: auto; }
-.log li { display: grid; grid-template-columns: 6.6em minmax(0, 1fr) 2.4em 36px; align-items: center; gap: 10px; font-size: .92rem; }
+.log li { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr) 2.6em 36px; align-items: center; gap: 10px; font-size: .92rem; }
 .log .when { color: var(--muted); font-size: .8rem; display: block; }
 .log .track { height: 10px; }
 .log .track i { display: block; height: 100%; min-width: 3px; background: var(--gold); border-radius: 0 4px 4px 0; }
@@ -198,6 +199,7 @@ h2 {
     <section class="play" aria-label="Partita in corso">
       <button class="tap" id="tap" type="button">
         <span class="tap-match" id="matchLabel">Partita 1</span>
+        <span class="tap-time" id="liveTime">Il timer parte alla prima cassa</span>
         <svg class="chest" id="chest" viewBox="0 0 120 92" aria-hidden="true">
           <g class="lid">
             <path class="wood" d="M12 44V30C12 15 23 6 38 6h44c15 0 26 9 26 24v14z"/>
@@ -238,6 +240,8 @@ h2 {
         <div><dt>Partite finite</dt><dd id="sMatches">0</dd></div>
         <div><dt>Media a partita</dt><dd id="sAvg">–</dd></div>
         <div><dt>Record</dt><dd id="sBest">0</dd></div>
+        <div><dt>Casse all'ora</dt><dd id="sRate">–</dd></div>
+        <div><dt>Durata media</dt><dd id="sDur">–</dd></div>
       </dl>
 
       <section class="extra" aria-label="Casse aggiunte a mano">
@@ -294,7 +298,7 @@ h2 {
   var GOAL_MAX = 99;
   var $ = function (id) { return document.getElementById(id); };
   var reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-  var state = { current: 0, goal: 10, done: 0, matches: [], extra: 0, updatedAt: 0 };
+  var state = { current: 0, goal: 10, done: 0, matches: [], extra: 0, startedAt: 0, updatedAt: 0 };
   var GIST_MODE = /\.github\.io$/.test(location.hostname);
   var T_KEY = "conta-casse-token", G_KEY = "conta-casse-gist", G_FILE = "conta-casse.json";
   var NOTE_LOCAL = "I conteggi restano salvati su questo dispositivo, in questo browser.";
@@ -325,6 +329,7 @@ h2 {
       ? s.matches.filter(function (m) { return m && typeof m.n === "number"; })
       : [];
     state.extra = whole(s.extra, 0);
+    state.startedAt = state.current > 0 ? whole(s.startedAt, 0) : 0;
     state.updatedAt = whole(s.updatedAt, 0);
   }
   function hasData() { return state.current > 0 || state.done > 0 || state.extra > 0 || state.matches.length > 0; }
@@ -431,6 +436,7 @@ h2 {
     state.current = Math.max(state.current, whole(d.current, 0));
     state.done = Math.max(state.done, whole(d.done, 0));
     state.extra = Math.max(state.extra, whole(d.extra, 0));
+    if (!state.startedAt) state.startedAt = whole(d.startedAt, 0);
   }
   function receive(d) {
     if (whole(d.updatedAt, 0) <= state.updatedAt) return;
@@ -509,6 +515,31 @@ h2 {
   }
 
   function num(v) { return v.toLocaleString("it-IT", { maximumFractionDigits: 1 }); }
+  function durOf(m) { return m.start > 0 && m.at > m.start ? m.at - m.start : 0; }
+  function clock(ms) {
+    var s = Math.floor(ms / 1000), h = Math.floor(s / 3600), m = Math.floor(s % 3600 / 60), r = s % 60;
+    var pad = function (x) { return (x < 10 ? "0" : "") + x; };
+    return (h ? h + ":" + pad(m) : m) + ":" + pad(r);
+  }
+  function mins(ms) {
+    var m = Math.round(ms / 60000);
+    if (m < 1) return "meno di 1 min";
+    if (m < 60) return m + " min";
+    return Math.floor(m / 60) + " h " + (m % 60 ? m % 60 + " min" : "");
+  }
+  function perHour(n, ms) {
+    if (ms < 60000) return null;
+    var v = n / (ms / 3600000);
+    return v >= 10 ? Math.round(v).toLocaleString("it-IT") : num(v);
+  }
+  function tick() {
+    var el = $("liveTime");
+    if (!state.startedAt || !state.current) { el.textContent = "Il timer parte alla prima cassa"; return; }
+    var ms = Math.max(0, Date.now() - state.startedAt);
+    var r = perHour(state.current, ms);
+    el.textContent = "⏱ " + clock(ms) + (r ? " · " + r + " all'ora" : "");
+  }
+  setInterval(tick, 1000);
   function when(ts) {
     var d = new Date(ts);
     if (isNaN(d)) return "";
@@ -544,6 +575,12 @@ h2 {
     $("sMatches").textContent = num(played);
     $("sAvg").textContent = played ? num(finished / played) : "–";
     $("sBest").textContent = num(Math.max(bestDone, state.current));
+    var timed = state.matches.filter(function (m) { return durOf(m) > 0; });
+    var tMs = timed.reduce(function (a, m) { return a + durOf(m); }, 0);
+    var tN = timed.reduce(function (a, m) { return a + m.n; }, 0);
+    $("sRate").textContent = perHour(tN, tMs) || "–";
+    $("sDur").textContent = timed.length ? mins(tMs / timed.length).replace("meno di 1 min", "<1 min") : "–";
+    tick();
 
     var list = $("logList");
     var listTop = list.scrollTop;
@@ -556,7 +593,8 @@ h2 {
       label.textContent = "Partita " + (played - i);
       var w = document.createElement("span");
       w.className = "when";
-      w.textContent = when(m.at);
+      var d = durOf(m), r = d ? perHour(m.n, d) : null;
+      w.textContent = when(m.at) + (d ? " · " + mins(d) : "") + (r ? " · " + r + "/ora" : "");
       label.appendChild(w);
       var track = document.createElement("span");
       track.className = "track";
@@ -629,6 +667,7 @@ h2 {
     var box = $("tap").getBoundingClientRect();
     var px = x == null ? box.width / 2 : x - box.left;
     var py = y == null ? box.height / 2 : y - box.top;
+    if (state.current === 0 || !state.startedAt) state.startedAt = Date.now();
     state.current += 1;
     state.done += 1;
     save(); render();
@@ -646,18 +685,21 @@ h2 {
     if (state.current === 0) return;
     state.current -= 1;
     if (state.done > 0) state.done -= 1;
+    if (state.current === 0) state.startedAt = 0;
     save(); render();
   });
 
   $("end").addEventListener("click", function () {
     if (state.current === 0) return;
-    var n = state.current;
-    state.matches.push({ n: n, at: Date.now() });
+    var n = state.current, start = state.startedAt, now = Date.now();
+    state.matches.push(start ? { n: n, at: now, start: start } : { n: n, at: now });
     state.current = 0;
+    state.startedAt = 0;
     save(); render();
-    toast("Partita salvata: " + n + (n === 1 ? " cassa" : " casse"), function () {
+    toast("Partita salvata: " + n + (n === 1 ? " cassa" : " casse") + (start ? " in " + mins(now - start) : ""), function () {
       state.matches.pop();
       state.current += n;
+      state.startedAt = start;
       save(); render();
     });
   });
@@ -683,7 +725,7 @@ h2 {
       return;
     }
     disarm();
-    state.current = 0; state.done = 0; state.matches = []; state.extra = 0;
+    state.current = 0; state.done = 0; state.matches = []; state.extra = 0; state.startedAt = 0;
     save(); render();
     toast("Conteggi azzerati");
   });

@@ -152,6 +152,10 @@ h2 {
 .sync ol { margin: 0; padding-left: 1.3em; display: grid; gap: 4px; font-size: .92rem; color: var(--muted); }
 .sync a { color: var(--gold); font-weight: 700; }
 .sync .err { color: var(--warn); }
+.opts { display: flex; flex-wrap: wrap; gap: 4px 16px; }
+.opt { display: inline-flex; align-items: center; gap: 8px; min-height: 36px; font-size: .92rem; }
+.opt input { width: 18px; height: 18px; accent-color: var(--gold); }
+#obsLink { font-size: .8rem; color: var(--muted); }
 
 .foot { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; font-size: .85rem; color: var(--muted); }
 .foot p { margin: 0; flex: 1 1 240px; }
@@ -279,6 +283,22 @@ h2 {
         </div>
       </section>
 
+      <section class="sync" id="obsPanel" hidden>
+        <h2>Overlay per OBS</h2>
+        <p class="sub">In OBS aggiungi una fonte Browser, incolla questo link e imposta 700 × 160. Si aggiorna da solo ogni paio di secondi.</p>
+        <div class="opts">
+          <label class="opt"><input type="checkbox" id="oTime" checked> Tempo</label>
+          <label class="opt"><input type="checkbox" id="oRate" checked> Casse all'ora</label>
+          <label class="opt"><input type="checkbox" id="oTot" checked> Totale</label>
+          <label class="opt"><input type="checkbox" id="oBg" checked> Riquadro scuro</label>
+        </div>
+        <div class="line">
+          <input id="obsLink" type="text" readonly aria-label="Link dell'overlay">
+          <button class="small" id="obsCopy" type="button">Copia link</button>
+        </div>
+        <p class="sub err">Il link contiene il tuo token: non mostrarlo in diretta e non condividerlo.</p>
+      </section>
+
       <footer class="foot">
         <p id="saveNote">I conteggi restano salvati su questo dispositivo, in questo browser.</p>
         <button class="small" id="reset" type="button">Azzera tutto</button>
@@ -390,6 +410,17 @@ h2 {
     $("syncPanel").hidden = !GIST_MODE;
     $("syncOff").hidden = on;
     $("syncOn").hidden = !on;
+    $("obsPanel").hidden = !(GIST_MODE && on);
+    buildObs();
+  }
+  function buildObs() {
+    var gid = lsGet(G_KEY);
+    if (!GIST_MODE || !gid || !gistToken) { $("obsLink").value = ""; return; }
+    var s = [["oTime", "t"], ["oRate", "r"], ["oTot", "tot"]]
+      .filter(function (o) { return $(o[0]).checked; })
+      .map(function (o) { return o[1]; }).join(",");
+    $("obsLink").value = location.origin + location.pathname.replace(/[^/]*$/, "") + "overlay.html#g=" +
+      encodeURIComponent(gid) + "&k=" + encodeURIComponent(gistToken) + "&s=" + (s || "none") + ($("oBg").checked ? "" : "&bg=0");
   }
   function disconnect() {
     if (stopWatch) stopWatch();
@@ -405,7 +436,7 @@ h2 {
     if (!cloud) return;
     dirty = true;
     clearTimeout(pushTimer);
-    pushTimer = setTimeout(push, GIST_MODE ? 1500 : 500);
+    pushTimer = setTimeout(push, GIST_MODE ? 700 : 500);
   }
   async function push() {
     if (!cloud || pushing || !dirty) return;
@@ -768,6 +799,14 @@ h2 {
     $("gistToken").value = "";
   });
   $("syncOut").addEventListener("click", disconnect);
+  ["oTime", "oRate", "oTot", "oBg"].forEach(function (id) { $(id).addEventListener("change", buildObs); });
+  $("obsCopy").addEventListener("click", function () {
+    var input = $("obsLink");
+    function fallback() { input.focus(); input.select(); toast("Link selezionato: copialo con Ctrl+C"); }
+    try {
+      navigator.clipboard.writeText(input.value).then(function () { toast("Link copiato: incollalo in OBS"); }, fallback);
+    } catch (e) { fallback(); }
+  });
 
   document.addEventListener("keydown", function (e) {
     if (e.repeat || e.ctrlKey || e.metaKey || e.altKey) return;
